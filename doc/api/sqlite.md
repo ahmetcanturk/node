@@ -123,6 +123,9 @@ such as the `readBigInts` option for statements and the `useBigIntArguments`
 option for user-defined functions. If Node.js reads an `INTEGER` value from
 SQLite that is outside the JavaScript [safe integer][] range, and the option to
 read BigInts is not enabled, then an `ERR_OUT_OF_RANGE` error will be thrown.
+The `changes` and `lastInsertRowid` values returned by [`statement.run()`][] are
+an exception: they are read after the statement has already been executed, so
+out-of-range values are returned as `bigint`s instead of throwing.
 
 ## Class: `Database`
 
@@ -1417,6 +1420,10 @@ executions of the same prepared statement.
 <!-- YAML
 added: v22.5.0
 changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/REPLACEME
+    description: Return `changes` and `lastInsertRowid` as `BigInt`s instead
+                 of throwing when they are outside the safe integer range.
   - version: v26.10.0
     pr-url: https://github.com/nodejs/node/pull/65709
     description: Bind `undefined` to `NULL`.
@@ -1457,6 +1464,12 @@ This method executes a prepared statement and returns an object summarizing the
 resulting changes. The prepared statement [parameters are bound][] using the
 values in `namedParameters` and `anonymousParameters`. See
 [Binding parameters][].
+
+`changes` and `lastInsertRowid` are read after the statement has been executed,
+so they never throw `ERR_OUT_OF_RANGE`. If reading BigInts is not enabled and a
+value is outside the JavaScript [safe integer][] range, it is returned as a
+`BigInt` instead of a number. `lastInsertRowid` belongs to the database
+connection, so it is also reported by statements that do not insert any rows.
 
 ### `statement.setAllowBareNamedParameters(enabled)`
 
@@ -2148,6 +2161,7 @@ callback function to indicate what type of operation is being authorized.
 [`sqlite3session_delete()`]: https://www.sqlite.org/session/sqlite3session_delete.html
 [`sqlite3session_patchset()`]: https://www.sqlite.org/session/sqlite3session_patchset.html
 [`statement.close()`]: #statementclose
+[`statement.run()`]: #statementrunnamedparameters-anonymousparameters
 [`statement.setAllowBareNamedParameters()`]: #statementsetallowbarenamedparametersenabled
 [`statement.setAllowUnknownNamedParameters()`]: #statementsetallowunknownnamedparametersenabled
 [`statement.stat()`]: #statementstatcounter

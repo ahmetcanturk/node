@@ -822,16 +822,35 @@ suite('Statement.prototype.setReadBigInts()', () => {
     });
   });
 
-  test('BigInt is required for reading large last insert row IDs', (t) => {
+  test('large last insert row IDs are returned as BigInts', (t) => {
     using db = new Database(':memory:');
     db.exec('CREATE TABLE data(key INTEGER PRIMARY KEY) STRICT');
     const insert = db.prepare('INSERT INTO data VALUES (?)');
 
-    t.assert.throws(() => {
-      insert.run(9007199254740993n);
-    }, {
-      code: 'ERR_OUT_OF_RANGE',
-      message: /^Value is too large to be represented as a JavaScript number: 9007199254740993$/,
+    // The row has already been inserted by the time the result is converted,
+    // so an out-of-range rowid must not throw. It is returned as a BigInt even
+    // though reading BigInts is not enabled.
+    t.assert.deepStrictEqual(insert.run(9007199254740993n), {
+      changes: 1,
+      lastInsertRowid: 9007199254740993n,
+    });
+    t.assert.deepStrictEqual(insert.run(-9007199254740993n), {
+      changes: 1,
+      lastInsertRowid: -9007199254740993n,
+    });
+
+    // The last insert rowid belongs to the connection, so statements that do
+    // not insert anything report it as well and must not throw either.
+    db.exec('CREATE TABLE other(val INTEGER) STRICT');
+    t.assert.deepStrictEqual(db.prepare('DELETE FROM other').run(), {
+      changes: 0,
+      lastInsertRowid: -9007199254740993n,
+    });
+
+    // Values inside the safe integer range are still returned as numbers.
+    t.assert.deepStrictEqual(insert.run(Number.MAX_SAFE_INTEGER), {
+      changes: 1,
+      lastInsertRowid: Number.MAX_SAFE_INTEGER,
     });
 
     insert.setReadBigInts(true);

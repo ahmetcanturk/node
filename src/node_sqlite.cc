@@ -134,6 +134,22 @@ inline MaybeLocal<Value> IntegerToValue(Isolate* isolate,
   return Number::New(isolate, value);
 }
 
+// Like IntegerToValue(), but never throws: values outside the safe integer
+// range are returned as BigInts even when BigInt reads are disabled. This is
+// used for run() results, which are read after the statement has already been
+// stepped, so throwing would report a failure for a write that has already
+// happened.
+inline Local<Value> IntegerToValueOrBigInt(Isolate* isolate,
+                                          sqlite3_int64 value,
+                                          bool use_big_ints) {
+  if (use_big_ints || value < -kMaxSafeJsInteger ||
+      value > kMaxSafeJsInteger) {
+    return BigInt::New(isolate, value);
+  }
+
+  return Number::New(isolate, value);
+}
+
 #define CHECK_ERROR_OR_THROW(isolate, db, expr, expected, ret)                 \
   do {                                                                         \
     int r_ = (expr);                                                           \
@@ -4147,14 +4163,12 @@ MaybeLocal<Object> StatementExecutionHelper::Run(Environment* env,
 
   sqlite3_int64 last_insert_rowid = sqlite3_last_insert_rowid(db->Connection());
   sqlite3_int64 changes = sqlite3_changes64(db->Connection());
-  Local<Value> last_insert_rowid_val;
-  Local<Value> changes_val;
-
-  if (!IntegerToValue(isolate, last_insert_rowid, use_big_ints)
-           .ToLocal(&last_insert_rowid_val) ||
-      !IntegerToValue(isolate, changes, use_big_ints).ToLocal(&changes_val)) {
-    return MaybeLocal<Object>();
-  }
+  // The statement has already been stepped, so these conversions must not
+  // throw: out-of-range values fall back to BigInts regardless of readBigInts.
+  Local<Value> last_insert_rowid_val =
+      IntegerToValueOrBigInt(isolate, last_insert_rowid, use_big_ints);
+  Local<Value> changes_val =
+      IntegerToValueOrBigInt(isolate, changes, use_big_ints);
 
   auto run_result_template = env->sqlite_run_result_template();
   if (run_result_template.IsEmpty()) {
